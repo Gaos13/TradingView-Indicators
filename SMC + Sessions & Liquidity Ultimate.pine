@@ -270,7 +270,7 @@ displayStructure(bool internal = false) =>
             currentAlerts.swingBullishBOS := tag == BOS
         pH.crossed := true
         t.bias := BULLISH
-        display = internal ? showInternalsInput and (showInternalBullInput == ALL or (showInternalBullInput == BOS and tag != MSS) or (showInternalBullInput == MSS and tag == MSS)) : showStructureInput and (showSwingBullInput == ALL or (showSwingBullInput == BOS and tag != MSS) or (showSwingBullInput == MSS and tag == MSS))
+        display = internal ? (showInternalsInput and (showInternalBullInput == ALL or (showInternalBullInput == BOS and tag != MSS) or (showInternalBullInput == MSS and tag == MSS))) : (showStructureInput and (showSwingBullInput == ALL or (showSwingBullInput == BOS and tag != MSS) or (showSwingBullInput == MSS and tag == MSS)))
         if display
             drawStructure(pH, tag, bColor, lStyle, label.style_label_down, lSize)
 
@@ -287,7 +287,7 @@ displayStructure(bool internal = false) =>
             currentAlerts.swingBearishBOS := tag == BOS
         pL.crossed := true
         t.bias := BEARISH
-        display = internal ? showInternalsInput and (showInternalBearInput == ALL or (showInternalBearInput == BOS and tag != MSS) or (showInternalBearInput == MSS and tag == MSS)) : showStructureInput and (showSwingBearInput == ALL or (showSwingBearInput == BOS and tag != MSS) or (showSwingBearInput == MSS and tag == MSS))
+        display = internal ? (showInternalsInput and (showInternalBearInput == ALL or (showInternalBearInput == BOS and tag != MSS) or (showInternalBearInput == MSS and tag == MSS))) : (showStructureInput and (showSwingBearInput == ALL or (showSwingBearInput == BOS and tag != MSS) or (showSwingBearInput == MSS and tag == MSS)))
         if display
             drawStructure(pL, tag, sColor, lStyle, label.style_label_up, lSize)
 
@@ -331,7 +331,6 @@ drawPremiumDiscountZones() =>
         line.set_xy1(eqLine, trailing.barTime, eq)
         line.set_xy2(eqLine, last_bar_time, eq)
         
-        // CORRECCIÓN AQUÍ: Se agrego el argumento 'trailing.bottom' faltante
         drawZone(trailing.bottom, math.round(0.5 * (trailing.barIndex + bar_index)), 0.95 * trailing.bottom + 0.05 * trailing.top, trailing.bottom, 'Discount', discountZoneColorInput, label.style_label_up)
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -351,7 +350,6 @@ getCurrentStructure(swingsLengthInput, false)
 getCurrentStructure(5, false, true)
 
 if showEqualHighsLowsInput
-    // Bars Confirmation hardcodeado a 3
     getCurrentStructure(3, true)
 
 if showInternalsInput or showTrendInput
@@ -1387,39 +1385,54 @@ detect_sweeps_this_bar() =>
                             level_s := py
                             src_s := s.lo_txt
 
-    // 3. Check DWM Levels
-    // Helper to check DWM arrays
-    check_dwm(dwm_hl h) =>
-        bool sh = false, bool sl = false
-        float lvl = na
-        string txt = ""
-        if h.hi_valid.size() > 0
-            for k = 0 to h.hi_valid.size() - 1
-                if h.hi_valid.get(k)
-                    ln = h.hi_line.get(k)
-                    py = ln.get_y1()
-                    if high > py and high[1] <= py
-                        sh := true, lvl := py, txt := "PDH/PWH/PMH"
+// 3. Check DWM Levels
+// Helper to check DWM arrays
+check_dwm(dwm_hl h) =>
+    bool sh = false
+    bool sl = false
+    float lvl = na
+    string txt = ""
+
+    if h.hi_valid.size() > 0
+        for k = 0 to h.hi_valid.size() - 1
+            if h.hi_valid.get(k)
+                ln = h.hi_line.get(k)
+                py = ln.get_y1()
+                if high > py and high[1] <= py
+                    sh := true
+                    lvl := py
+                    txt := "PDH/PWH/PMH"
+                        
         if h.lo_valid.size() > 0
             for k = 0 to h.lo_valid.size() - 1
                 if h.lo_valid.get(k)
                     ln = h.lo_line.get(k)
                     py = ln.get_y1()
                     if low < py and low[1] >= py
-                        sl := true, lvl := py, txt := "PDL/PWL/PML"
+                        sl := true
+                        lvl := py
+                        txt := "PDL/PWL/PML"
         [sh, sl, lvl, txt]
 
     [d_sh, d_sl, d_lvl, d_txt] = check_dwm(d_hl)
     if d_sh 
-        swept_high := true, level_s := d_lvl, src_s := d_txt
+        swept_high := true
+        level_s := d_lvl
+        src_s := d_txt
     if d_sl
-        swept_low := true, level_s := d_lvl, src_s := d_txt
+        swept_low := true
+        level_s := d_lvl
+        src_s := d_txt
 
     [w_sh, w_sl, w_lvl, w_txt] = check_dwm(w_hl)
     if w_sh 
-        swept_high := true, level_s := w_lvl, src_s := w_txt
+        swept_high := true
+        level_s := w_lvl
+        src_s := w_txt
     if w_sl
-        swept_low := true, level_s := w_lvl, src_s := w_txt
+        swept_low := true
+        level_s := w_lvl
+        src_s := w_txt
 
     if swept_high
         last_liq_sweep_time := time
@@ -1492,11 +1505,7 @@ check_v_shape(bool is_long) =>
 if enableIfvg and not current_signal.active and array.size(fvg_list) > 0
     // Iterate to find potential IFVGs created THIS bar
     // An IFVG is created when an active FVG is invalidated by a close
-    
     // We need to look at FVGs that *were* active but might have just been invalidated
-    // NOTE: The base code sets active=false when close crosses. We need to catch that specific event.
-    // The base code runs before this block. So if f.active is false, but it was true, and close crossed it...
-    // Actually, simply checking if close is beyond the FVG limits for a FVG that matches the sweep direction is enough.
     
     for i = 0 to array.size(fvg_list) - 1
         FVG f = array.get(fvg_list, i)
@@ -1604,7 +1613,8 @@ if enableIfvg and not current_signal.active and array.size(fvg_list) > 0
                             current_signal.entry := close
                             current_signal.rating := rate
                             current_signal.sl := ta.highest(5)
-                             if parsedHighs.size() > 0
+                            
+                            if parsedHighs.size() > 0
                                 current_signal.sl := parsedHighs.get(parsedHighs.size()-1)
                             
                             current_signal.be := (current_signal.entry + current_signal.sl) / 2
@@ -1612,7 +1622,7 @@ if enableIfvg and not current_signal.active and array.size(fvg_list) > 0
                             current_signal.tp1 := current_signal.entry - (dist * 2)
                             current_signal.tp2 := current_signal.entry - (dist * 3)
                             
-                             // Visuals
+                            // Visuals
                             if showIfvgBox
                                 box.new(bar_index, f.top, bar_index + 5, f.bottom, bgcolor = color.new(colEntry, 80), border_color = colEntry)
 
