@@ -921,7 +921,7 @@ if array.size(fvg_list) > 0
 // -------------------------------------------------------------------------
 
 // --- Funciones DWM Execution ---
-dwm_hl_func(string tf, bool use, dwm_hl hl, dwm_info n, color col) =>
+dwm_hl_func(string tf, bool use, hl, n, color col) =>
     if use
         if timeframe.change(tf)
             hl.hi_line.unshift(line.new(time, n.ph, time, n.ph, xloc = xloc.bar_time, style = htf_style, width = htf_width, color = col))
