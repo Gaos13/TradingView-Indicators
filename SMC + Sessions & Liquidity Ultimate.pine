@@ -46,30 +46,6 @@ SWING_GROUP    = 'Swing Structure'
 EQUAL_GROUP    = 'EQH/EQL'
 ZONES_GROUP    = 'Premium & Discount'
 
-// ==============================================================================
-// 1. INPUTS
-// ==============================================================================
-var grp_ifvg = "IFVG Strategy Settings"
-enableIfvg   = input.bool(true, "Enable IFVG Strategy", group = grp_ifvg)
-manualBias   = input.string("Bullish", "Manual Bias", options = ["Bullish", "Bearish", "Neutral"], group = grp_ifvg)
-autoBias     = input.bool(false, "Enable Automatic Bias", tooltip = "Uses SMC Swing Structure to determine bias dynamically.", group = grp_ifvg)
-allowLongIfvg = input.bool(false, "Allow 6-15 Candle IFVGs", tooltip = "If enabled, V-Shape Recovery becomes optional (confluence) and max search lookback extends to 15 bars.", group = grp_ifvg)
-detectMode   = input.string("Single", "Detection Mode", options = ["Single", "Series"], group = grp_ifvg)
-
-// Confluences
-useHtfFvg    = input.bool(true, "Confluence: HTF FVG", group = grp_ifvg)
-useMultiSwp  = input.bool(true, "Confluence: Multi-Sweep", group = grp_ifvg)
-useCisd      = input.bool(true, "Confluence: CISD", group = grp_ifvg)
-useMacroConf = input.bool(true, "Confluence: Macro", group = grp_ifvg)
-useVShapeConf= input.bool(true, "Confluence: V-Shape (If Optional)", group = grp_ifvg)
-
-// Visuals
-showIfvgBox  = input.bool(true, "Show IFVG Boxes", group = grp_ifvg)
-showSignal   = input.bool(true, "Show Signal Levels", group = grp_ifvg)
-colEntry     = input.color(color.blue, "Entry Color", group = grp_ifvg)
-colSL        = input.color(color.red, "SL Color", group = grp_ifvg)
-colTP        = input.color(color.green, "TP Color", group = grp_ifvg)
-
 //---------------------------------------------------------------------------------------------------------------------
 // INPUTS SMC
 //---------------------------------------------------------------------------------------------------------------------
@@ -294,7 +270,7 @@ displayStructure(bool internal = false) =>
             currentAlerts.swingBullishBOS := tag == BOS
         pH.crossed := true
         t.bias := BULLISH
-        display = internal ? (showInternalsInput and (showInternalBullInput == ALL or (showInternalBullInput == BOS and tag != MSS) or (showInternalBullInput == MSS and tag == MSS))) : (showStructureInput and (showSwingBullInput == ALL or (showSwingBullInput == BOS and tag != MSS) or (showSwingBullInput == MSS and tag == MSS)))
+        display = internal ? showInternalsInput and (showInternalBullInput == ALL or (showInternalBullInput == BOS and tag != MSS) or (showInternalBullInput == MSS and tag == MSS)) : showStructureInput and (showSwingBullInput == ALL or (showSwingBullInput == BOS and tag != MSS) or (showSwingBullInput == MSS and tag == MSS))
         if display
             drawStructure(pH, tag, bColor, lStyle, label.style_label_down, lSize)
 
@@ -311,7 +287,7 @@ displayStructure(bool internal = false) =>
             currentAlerts.swingBearishBOS := tag == BOS
         pL.crossed := true
         t.bias := BEARISH
-        display = internal ? (showInternalsInput and (showInternalBearInput == ALL or (showInternalBearInput == BOS and tag != MSS) or (showInternalBearInput == MSS and tag == MSS))) : (showStructureInput and (showSwingBearInput == ALL or (showSwingBearInput == BOS and tag != MSS) or (showSwingBearInput == MSS and tag == MSS)))
+        display = internal ? showInternalsInput and (showInternalBearInput == ALL or (showInternalBearInput == BOS and tag != MSS) or (showInternalBearInput == MSS and tag == MSS)) : showStructureInput and (showSwingBearInput == ALL or (showSwingBearInput == BOS and tag != MSS) or (showSwingBearInput == MSS and tag == MSS))
         if display
             drawStructure(pL, tag, sColor, lStyle, label.style_label_up, lSize)
 
@@ -355,6 +331,7 @@ drawPremiumDiscountZones() =>
         line.set_xy1(eqLine, trailing.barTime, eq)
         line.set_xy2(eqLine, last_bar_time, eq)
         
+        // CORRECCIÓN AQUÍ: Se agrego el argumento 'trailing.bottom' faltante
         drawZone(trailing.bottom, math.round(0.5 * (trailing.barIndex + bar_index)), 0.95 * trailing.bottom + 0.05 * trailing.top, trailing.bottom, 'Discount', discountZoneColorInput, label.style_label_up)
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -374,6 +351,7 @@ getCurrentStructure(swingsLengthInput, false)
 getCurrentStructure(5, false, true)
 
 if showEqualHighsLowsInput
+    // Bars Confirmation hardcodeado a 3
     getCurrentStructure(3, true)
 
 if showInternalsInput or showTrendInput
@@ -1285,6 +1263,30 @@ if showSmt
 // -------------------------------------------------------------------------
 
 // ==============================================================================
+// 1. INPUTS
+// ==============================================================================
+var grp_ifvg = "IFVG Strategy Settings"
+enableIfvg   = input.bool(true, "Enable IFVG Strategy", group = grp_ifvg)
+manualBias   = input.string("Bullish", "Manual Bias", options = ["Bullish", "Bearish", "Neutral"], group = grp_ifvg)
+autoBias     = input.bool(false, "Enable Automatic Bias", tooltip = "Uses SMC Swing Structure to determine bias dynamically.", group = grp_ifvg)
+allowLongIfvg = input.bool(false, "Allow 6-15 Candle IFVGs", tooltip = "If enabled, V-Shape Recovery becomes optional (confluence) and max search lookback extends to 15 bars.", group = grp_ifvg)
+detectMode   = input.string("Single", "Detection Mode", options = ["Single", "Series"], group = grp_ifvg)
+
+// Confluences
+useHtfFvg    = input.bool(true, "Confluence: HTF FVG", group = grp_ifvg)
+useMultiSwp  = input.bool(true, "Confluence: Multi-Sweep", group = grp_ifvg)
+useCisd      = input.bool(true, "Confluence: CISD", group = grp_ifvg)
+useMacroConf = input.bool(true, "Confluence: Macro", group = grp_ifvg)
+useVShapeConf= input.bool(true, "Confluence: V-Shape (If Optional)", group = grp_ifvg)
+
+// Visuals
+showIfvgBox  = input.bool(true, "Show IFVG Boxes", group = grp_ifvg)
+showSignal   = input.bool(true, "Show Signal Levels", group = grp_ifvg)
+colEntry     = input.color(color.blue, "Entry Color", group = grp_ifvg)
+colSL        = input.color(color.red, "SL Color", group = grp_ifvg)
+colTP        = input.color(color.green, "TP Color", group = grp_ifvg)
+
+// ==============================================================================
 // 2. STATE & TYPES
 // ==============================================================================
 
@@ -1308,7 +1310,7 @@ var IfvgSignal current_signal = IfvgSignal.new()
 
 // State variables for sweep detection
 var int last_liq_sweep_time = 0
-var bool last_liq_sweep_was_high = false // true = BSL swept (Shorts), false = SSL swept (Longs)
+var bool last_liq_sweep_was_high = na // true = BSL swept (Shorts), false = SSL swept (Longs)
 var float last_liq_sweep_level = na
 var string last_liq_sweep_src = ""
 
@@ -1338,126 +1340,109 @@ get_bias() =>
 
 current_bias = get_bias()
 
-// Función auxiliar movida al ámbito global para evitar errores de sintaxis
-check_dwm(dwm_hl h) =>
-    bool sh = false
-    bool sl = false
-    float lvl = na
-    string txt = ""
-
-    if h.hi_valid.size() > 0
-        for k = 0 to h.hi_valid.size() - 1
-            if h.hi_valid.get(k)
-                ln = h.hi_line.get(k)
-                py = ln.get_y1()
-                if high > py and high[1] <= py
-                    sh := true
-                    lvl := py
-                    txt := "PDH/PWH/PMH"
-    
-    if h.lo_valid.size() > 0
-        for k = 0 to h.lo_valid.size() - 1
-            if h.lo_valid.get(k)
-                ln = h.lo_line.get(k)
-                py = ln.get_y1()
-                if low < py and low[1] >= py
-                    sl := true
-                    lvl := py
-                    txt := "PDL/PWL/PML"
-    [sh, sl, lvl, txt]
-
-// --- 3.2 Sweep Detection Hook ---
-detect_sweeps_this_bar() =>
+// --- 3.2 Sweep Detection Hook (ROBUST VERSION) ---
+// Checks existing objects from base code because base code might have removed levels from 'levels' array
+detect_sweeps_robust() =>
     bool swept_high = false
     bool swept_low = false
     float level_s = na
     string src_s = ""
 
-    // 1. Check Swing Levels (levels array)
-    if levels.size() > 0
-        for i = 0 to levels.size() - 1
-            l = levels.get(i)
-            if l.isHigh and high > l.price and high[1] <= l.price
-                swept_high := true
-                level_s := l.price
-                src_s := "Swing High"
-            if not l.isHigh and low < l.price and low[1] >= l.price
-                swept_low := true
-                level_s := l.price
-                src_s := "Swing Low"
+    // 1. Check PIVOT Sweeps (using 'sweeps' global array populated by base code)
+    // The base code pushes to 'sweeps' ONLY if showSwp is true.
+    if sweeps.size() > 0
+        // Get the last sweep object
+        last_swp = sweeps.get(sweeps.size() - 1)
+        // Check if it happened on THIS bar (x2 is time)
+        if line.get_x2(last_swp.swpLine) == time
+            y_level = line.get_y1(last_swp.swpLine)
+            // Determine if high or low based on price relation
+            if high >= y_level and low < y_level // It crossed
+                // If close is high, likely BSL?
+                // Actually base code deletes the pivot level line.
+                // We assume if high > level it was a high sweep? Not necessarily.
+                // Pivot High sweep: Price goes above pivot.
+                if high > y_level and high[1] <= y_level // Simple crossover check
+                    swept_high := true
+                    level_s := y_level
+                    src_s := "Swing High"
+                else if low < y_level and low[1] >= y_level
+                    swept_low := true
+                    level_s := y_level
+                    src_s := "Swing Low"
 
-    // 2. Check Session Levels (_sessions array)
+    // 2. Check DWM Sweeps (using d_hl, w_hl, m_hl global objects)
+    // We iterate the lines. If price crosses a line that is NOT valid (or is valid), we count it.
+    // Base code sets valid=false on sweep.
+    check_dwm_lines(dwm_hl h, string tag) =>
+        bool sh = false
+        bool sl = false
+        float l_val = na
+        string s_txt = ""
+        if h.hi_line.size() > 0
+            for i = 0 to h.hi_line.size() - 1
+                ln = h.hi_line.get(i)
+                lvl = line.get_y1(ln)
+                // Check crossover this bar
+                if high > lvl and high[1] <= lvl
+                    sh := true
+                    l_val := lvl
+                    s_txt := tag + " High"
+        if h.lo_line.size() > 0
+            for i = 0 to h.lo_line.size() - 1
+                ln = h.lo_line.get(i)
+                lvl = line.get_y1(ln)
+                if low < lvl and low[1] >= lvl
+                    sl := true
+                    l_val := lvl
+                    s_txt := tag + " Low"
+        [sh, sl, l_val, s_txt]
+
+    [d_sh, d_sl, d_lvl, d_txt] = check_dwm_lines(d_hl, "PD")
+    if d_sh 
+        swept_high := true, level_s := d_lvl, src_s := d_txt
+    if d_sl
+        swept_low := true, level_s := d_lvl, src_s := d_txt
+
+    // 3. Check Session Sweeps
     if _sessions.size() > 0
         for i = 0 to _sessions.size() - 1
-            s = _sessions.get(i)
-            // Check active lines
-            if s._sess._hi_valid.size() > 0
-                for k = 0 to s._sess._hi_valid.size() - 1
-                    if s._sess._hi_valid.get(k)
-                        ln = s._sess._hi_line.get(k)
-                        py = ln.get_y1()
-                        if high > py and high[1] <= py
-                            swept_high := true
-                            level_s := py
-                            src_s := s.hi_txt
+            sess = _sessions.get(i)
+            // Check Highs
+            if sess._sess._hi_line.size() > 0
+                for k = 0 to sess._sess._hi_line.size() - 1
+                    ln = sess._sess._hi_line.get(k)
+                    lvl = line.get_y1(ln)
+                    if high > lvl and high[1] <= lvl
+                        swept_high := true, level_s := lvl, src_s := sess.hi_txt
+            // Check Lows
+            if sess._sess._lo_line.size() > 0
+                for k = 0 to sess._sess._lo_line.size() - 1
+                    ln = sess._sess._lo_line.get(k)
+                    lvl = line.get_y1(ln)
+                    if low < lvl and low[1] >= lvl
+                        swept_low := true, level_s := lvl, src_s := sess.lo_txt
 
-            if s._sess._lo_valid.size() > 0
-                for k = 0 to s._sess._lo_valid.size() - 1
-                    if s._sess._lo_valid.get(k)
-                        ln = s._sess._lo_line.get(k)
-                        py = ln.get_y1()
-                        if low < py and low[1] >= py
-                            swept_low := true
-                            level_s := py
-                            src_s := s.lo_txt
-
-    // 3. Check DWM Levels (Usando la función global)
-    [d_sh, d_sl, d_lvl, d_txt] = check_dwm(d_hl)
-    if d_sh 
-        swept_high := true
-        level_s := d_lvl
-        src_s := d_txt
-    if d_sl
-        swept_low := true
-        level_s := d_lvl
-        src_s := d_txt
-
-    [w_sh, w_sl, w_lvl, w_txt] = check_dwm(w_hl)
-    if w_sh 
-        swept_high := true
-        level_s := w_lvl
-        src_s := w_txt
-    if w_sl
-        swept_low := true
-        level_s := w_lvl
-        src_s := w_txt
-    
-    // Retornamos los valores encontrados
-    [swept_high, swept_low, level_s, src_s]
-
-if enableIfvg
-    // Recibimos los valores de la función
-    [sw_h, sw_l, sw_lvl, sw_src] = detect_sweeps_this_bar()
-    
-    // Actualizamos las variables globales aquí, en el ámbito principal
-    if sw_h
+    if swept_high
         last_liq_sweep_time := time
         last_liq_sweep_was_high := true
-        last_liq_sweep_level := sw_lvl
-        last_liq_sweep_src := sw_src
+        last_liq_sweep_level := level_s
+        last_liq_sweep_src := src_s
         highest_since_sweep := high 
         lowest_since_sweep := low
     
-    if sw_l
+    if swept_low
         last_liq_sweep_time := time
         last_liq_sweep_was_high := false
-        last_liq_sweep_level := sw_lvl
-        last_liq_sweep_src := sw_src
+        last_liq_sweep_level := level_s
+        last_liq_sweep_src := src_s
         highest_since_sweep := high
         lowest_since_sweep := low
 
+if enableIfvg
+    detect_sweeps_robust()
     // Update V-Shape trackers
-    if last_liq_sweep_time != 0
+    if not na(last_liq_sweep_time)
         highest_since_sweep := math.max(nz(highest_since_sweep), high)
         lowest_since_sweep := math.min(nz(lowest_since_sweep), low)
 
@@ -1508,8 +1493,6 @@ check_v_shape(bool is_long) =>
 // --- 3.6 IFVG Detection & Signal Generation ---
 if enableIfvg and not current_signal.active and array.size(fvg_list) > 0
     // Iterate to find potential IFVGs created THIS bar
-    // An IFVG is created when an active FVG is invalidated by a close
-    // We need to look at FVGs that *were* active but might have just been invalidated
     
     for i = 0 to array.size(fvg_list) - 1
         FVG f = array.get(fvg_list, i)
@@ -1617,8 +1600,7 @@ if enableIfvg and not current_signal.active and array.size(fvg_list) > 0
                             current_signal.entry := close
                             current_signal.rating := rate
                             current_signal.sl := ta.highest(5)
-                            
-                            if parsedHighs.size() > 0
+                             if parsedHighs.size() > 0
                                 current_signal.sl := parsedHighs.get(parsedHighs.size()-1)
                             
                             current_signal.be := (current_signal.entry + current_signal.sl) / 2
@@ -1626,7 +1608,7 @@ if enableIfvg and not current_signal.active and array.size(fvg_list) > 0
                             current_signal.tp1 := current_signal.entry - (dist * 2)
                             current_signal.tp2 := current_signal.entry - (dist * 3)
                             
-                            // Visuals
+                             // Visuals
                             if showIfvgBox
                                 box.new(bar_index, f.top, bar_index + 5, f.bottom, bgcolor = color.new(colEntry, 80), border_color = colEntry)
 
@@ -1667,3 +1649,36 @@ if current_signal.active
 if current_signal.active and ta.change(current_signal.active)
     if current_signal.rating == "A+"
         alert("A+ IFVG Setup Detected!", alert.freq_once_per_bar_close)
+
+// -------------------------------------------------------------------------
+// --- F. DASHBOARD (NEW) ---
+// -------------------------------------------------------------------------
+var table dash = table.new(position.top_right, 2, 6, bgcolor = color.new(color.black, 50), frame_color = color.black, frame_width = 1, border_color = color.black, border_width = 1)
+
+if barstate.islast and enableIfvg
+    // Header
+    table.cell(dash, 0, 0, "IFVG Model", bgcolor = color.gray, text_color = color.white, width = 10)
+    table.cell(dash, 1, 0, "Status", bgcolor = color.gray, text_color = color.white, width = 10)
+    
+    // Bias
+    bias_txt = current_bias == BULLISH ? "Bullish" : (current_bias == BEARISH ? "Bearish" : "Neutral")
+    bias_col = current_bias == BULLISH ? color.green : (current_bias == BEARISH ? color.red : color.gray)
+    table.cell(dash, 0, 1, "Bias", text_color = color.white)
+    table.cell(dash, 1, 1, bias_txt, text_color = bias_col)
+    
+    // Last Sweep
+    swp_txt = last_liq_sweep_src != "" ? last_liq_sweep_src : "None"
+    swp_col = last_liq_sweep_was_high ? color.red : color.green
+    table.cell(dash, 0, 2, "Sweep", text_color = color.white)
+    table.cell(dash, 1, 2, swp_txt, text_color = swp_col)
+    
+    // Active Signal
+    sig_txt = current_signal.active ? (current_signal.is_long ? "Long Active" : "Short Active") : "Searching..."
+    sig_col = current_signal.active ? (current_signal.is_long ? color.green : color.red) : color.gray
+    table.cell(dash, 0, 3, "Signal", text_color = color.white)
+    table.cell(dash, 1, 3, sig_txt, text_color = sig_col)
+    
+    // Rating
+    rate_txt = current_signal.active ? current_signal.rating : "-"
+    table.cell(dash, 0, 4, "Rating", text_color = color.white)
+    table.cell(dash, 1, 4, rate_txt, text_color = color.white)
