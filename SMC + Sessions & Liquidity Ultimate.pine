@@ -1,0 +1,1258 @@
+//@version=6
+indicator('SMC + Sessions & Liquidity Ultimate', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
+
+//---------------------------------------------------------------------------------------------------------------------
+// --- INDICADOR 1: SMART MONEY CONCEPTS (SMC) ---
+//---------------------------------------------------------------------------------------------------------------------
+
+//---------------------------------------------------------------------------------------------------------------------
+// CONSTANTS
+//---------------------------------------------------------------------------------------------------------------------
+BULLISH_LEG = 1
+BEARISH_LEG = 0
+
+BULLISH = +1
+BEARISH = -1
+
+GREEN = #089981
+RED   = #F23645
+BLUE  = #2157f3
+GRAY  = #878b94
+
+HISTORICAL = 'Historical'
+PRESENT    = 'Present'
+
+ALL   = 'All'
+BOS   = 'BOS'
+MSS   = 'MSS'
+
+TINY   = size.tiny
+SMALL  = size.small
+NORMAL = size.normal
+
+ATR   = 'Atr'
+RANGE = 'Cumulative Mean Range'
+
+CLOSE   = 'Close'
+HIGHLOW = 'High/Low'
+
+SOLID  = '⎯⎯⎯'
+DASHED = '----'
+DOTTED = '····'
+
+SMART_GROUP    = 'Smart Money Concepts'
+INTERNAL_GROUP = 'Internal Structure'
+SWING_GROUP    = 'Swing Structure'
+EQUAL_GROUP    = 'EQH/EQL'
+ZONES_GROUP    = 'Premium & Discount'
+
+//---------------------------------------------------------------------------------------------------------------------
+// INPUTS SMC
+//---------------------------------------------------------------------------------------------------------------------
+modeInput = input.string(PRESENT, 'Mode', inline = "smc1", group = SMART_GROUP, options = [HISTORICAL, PRESENT])
+showTrendInput = input(false, 'Color Candles', inline = "smc1", group = SMART_GROUP)
+
+showInternalsInput = input(false, 'Show Internal Structure', inline = "intstr1", group = INTERNAL_GROUP)
+internalFilterConfluenceInput = input(false, 'Confluence Filter', inline = "intstr1", group = INTERNAL_GROUP)
+showInternalBullInput = input.string(ALL, 'Bullish |', inline = 'ibull', group = INTERNAL_GROUP, options = [ALL, BOS, MSS])
+internalBullColorInput = input(#000000, '', inline = 'ibull', group = INTERNAL_GROUP)
+showInternalBearInput = input.string(ALL, 'Bearish |', inline = 'ibear', group = INTERNAL_GROUP, options = [ALL, BOS, MSS])
+internalBearColorInput = input(#000000, '', inline = 'ibear', group = INTERNAL_GROUP)
+internalStructureSize = input.string(TINY, 'Internal Label Size', group = INTERNAL_GROUP, options = [TINY, SMALL, NORMAL])
+
+showStructureInput = input(false, 'Show Swing Structure', inline = "swistr1", group = SWING_GROUP)
+showHighLowSwingsInput = input(true, 'Show Strong/Weak High/Low', inline = "swistr1", group = SWING_GROUP)
+showSwingBullInput = input.string(ALL, 'Bullish |', inline = 'bull', group = SWING_GROUP, options = [ALL, BOS, MSS])
+swingBullColorInput = input(#000000, '', inline = 'bull', group = SWING_GROUP)
+showSwingBearInput = input.string(ALL, 'Bearish |', inline = 'bear', group = SWING_GROUP, options = [ALL, BOS, MSS])
+swingBearColorInput = input(#000000, '', inline = 'bear', group = SWING_GROUP)
+swingStructureSize = input.string(SMALL, 'Swing Label Size', group = SWING_GROUP, options = [TINY, SMALL, NORMAL])
+showSwingsInput = input(false, 'Show Swings Points', inline = 'swings', group = SWING_GROUP)
+swingsLengthInput = input.int(50, '', inline = 'swings', group = SWING_GROUP, minval = 10)
+
+// --- MODIFICACIÓN EQH/EQL ---
+showEqualHighsLowsInput = input(false, 'Show EQH/EQL', group = EQUAL_GROUP)
+equalHighsLowsSizeInput = input.string(TINY, 'Label Size', inline = "eqhlsty", group = EQUAL_GROUP, options = [TINY, SMALL, NORMAL])
+equalHighsLowsColorInput = input.color(#000000, "", inline = "eqhlsty", group = EQUAL_GROUP)
+
+showPremiumDiscountZonesInput = input(false, 'Show Premium/Discount', group = ZONES_GROUP)
+premiumZoneColorInput = input.color(RED, 'Premium', inline = "p&dsty", group = ZONES_GROUP)
+equilibriumZoneColorInput = input.color(GRAY, 'Equilibrium', inline = "p&dsty", group = ZONES_GROUP)
+discountZoneColorInput = input.color(GREEN, 'Discount', inline = "p&dsty", group = ZONES_GROUP)
+
+//---------------------------------------------------------------------------------------------------------------------
+// TYPES & ARRAYS SMC
+//---------------------------------------------------------------------------------------------------------------------
+type alerts
+    bool internalBullishBOS = false
+    bool internalBearishBOS = false
+    bool internalBullishMSS = false
+    bool internalBearishMSS = false
+    bool swingBullishBOS = false
+    bool swingBearishBOS = false
+    bool swingBullishMSS = false
+    bool swingBearishMSS = false
+    bool equalHighs = false
+    bool equalLows = false
+
+type trailingExtremes
+    float top
+    float bottom
+    int barTime
+    int barIndex
+    int lastTopTime
+    int lastBottomTime
+
+type trend
+    int bias
+
+type equalDisplay
+    line l_ine = na
+    label l_abel = na
+
+type pivot
+    float currentLevel
+    float lastLevel
+    bool crossed
+    int barTime = time
+    int barIndex = bar_index
+
+var pivot swingHigh = pivot.new(na, na, false)
+var pivot swingLow = pivot.new(na, na, false)
+var pivot internalHigh = pivot.new(na, na, false)
+var pivot internalLow = pivot.new(na, na, false)
+var pivot equalHigh = pivot.new(na, na, false)
+var pivot equalLow = pivot.new(na, na, false)
+
+var trend swingTrend = trend.new(0)
+var trend internalTrend = trend.new(0)
+var equalHighDisplay = equalDisplay.new()
+var equalLowDisplay = equalDisplay.new()
+
+var array<float> parsedHighs = array.new<float>()
+var array<float> parsedLows = array.new<float>()
+var array<float> highs = array.new<float>()
+var array<float> lows = array.new<float>()
+var array<int> times = array.new<int>()
+
+var trailingExtremes trailing = trailingExtremes.new()
+
+//---------------------------------------------------------------------------------------------------------------------
+// INITIALIZATION SMC
+//---------------------------------------------------------------------------------------------------------------------
+atrMeasure = ta.atr(200)
+volatilityMeasure = (bar_index > 0 ? ta.cum(ta.tr) / bar_index : ta.tr)
+highVolatilityBar = (high - low) >= 2 * (na(volatilityMeasure) ? 0 : volatilityMeasure)
+parsedHigh = highVolatilityBar ? low : high
+parsedLow = highVolatilityBar ? high : low
+
+parsedHighs.push(parsedHigh)
+parsedLows.push(parsedLow)
+highs.push(high)
+lows.push(low)
+times.push(time)
+
+alerts currentAlerts = alerts.new()
+
+//---------------------------------------------------------------------------------------------------------------------
+// CORE FUNCTIONS SMC
+//---------------------------------------------------------------------------------------------------------------------
+leg(int size) =>
+    var int legValue = 0
+    newLegHigh = high[size] > ta.highest(size)
+    newLegLow = low[size] < ta.lowest(size)
+    if newLegHigh
+        legValue := BEARISH_LEG
+    else if newLegLow
+        legValue := BULLISH_LEG
+    legValue
+
+startOfNewLeg(int legVal) => ta.change(legVal) != 0
+startOfBearishLeg(int legVal) => ta.change(legVal) == -1
+startOfBullishLeg(int legVal) => ta.change(legVal) == +1
+
+drawLabel(int labelTime, float labelPrice, string tag, color labelColor, string labelStyle) =>
+    var label l_abel = na
+    if modeInput == PRESENT
+        l_abel.delete()
+    l_abel := label.new(chart.point.new(labelTime, na, labelPrice), tag, xloc.bar_time, color = color(na), textcolor = labelColor, style = labelStyle, size = size.small)
+    l_abel
+
+drawEqualHighLow(pivot p_ivot, float level, int size, bool isEqualHigh) =>
+    equalDisplay e_qualDisplay = isEqualHigh ? equalHighDisplay : equalLowDisplay
+    string tag = isEqualHigh ? 'EQH' : 'EQL'
+    color equalColor = equalHighsLowsColorInput 
+    
+    string labelStyle = isEqualHigh ? label.style_label_down : label.style_label_up
+    if modeInput == PRESENT
+        line.delete(e_qualDisplay.l_ine)
+        label.delete(e_qualDisplay.l_abel)
+    e_qualDisplay.l_ine := line.new(chart.point.new(p_ivot.barTime, na, p_ivot.currentLevel), chart.point.new(time[size], na, level), xloc = xloc.bar_time, color = equalColor, style = line.style_dotted)
+    labelPos = math.round(0.5 * (p_ivot.barIndex + bar_index - size))
+    e_qualDisplay.l_abel := label.new(chart.point.new(na, labelPos, level), tag, xloc.bar_index, color = color(na), textcolor = equalColor, style = labelStyle, size = equalHighsLowsSizeInput)
+
+getCurrentStructure(int size, bool equalHighLow = false, bool internal = false) =>
+    if bar_index > size
+        currentLeg = leg(size)
+        newPivot = startOfNewLeg(currentLeg)
+        pLow = startOfBullishLeg(currentLeg)
+        pHigh = startOfBearishLeg(currentLeg)
+
+        if newPivot
+            if pLow
+                pivot p = equalHighLow ? equalLow : (internal ? internalLow : swingLow)
+                // Threshold hardcodeado 0.1
+                if equalHighLow and not na(p.currentLevel) and math.abs(p.currentLevel - low[size]) < 0.1 * (na(atrMeasure) ? 0 : atrMeasure)
+                    drawEqualHighLow(p, low[size], size, false)
+                    currentAlerts.equalLows := true
+                p.lastLevel := p.currentLevel
+                p.currentLevel := low[size]
+                p.crossed := false
+                p.barTime := time[size]
+                p.barIndex := bar_index[size]
+                if not equalHighLow and not internal
+                    trailing.bottom := p.currentLevel
+                    trailing.barTime := p.barTime
+                    trailing.barIndex := p.barIndex
+                    trailing.lastBottomTime := p.barTime
+                if showSwingsInput and not internal and not equalHighLow
+                    drawLabel(time[size], p.currentLevel, p.currentLevel < p.lastLevel ? 'LL' : 'HL', swingBullColorInput, label.style_label_up)
+            else
+                pivot p = equalHighLow ? equalHigh : (internal ? internalHigh : swingHigh)
+                // Threshold hardcodeado 0.1
+                if equalHighLow and not na(p.currentLevel) and math.abs(p.currentLevel - high[size]) < 0.1 * (na(atrMeasure) ? 0 : atrMeasure)
+                    drawEqualHighLow(p, high[size], size, true)
+                    currentAlerts.equalHighs := true
+                p.lastLevel := p.currentLevel
+                p.currentLevel := high[size]
+                p.crossed := false
+                p.barTime := time[size]
+                p.barIndex := bar_index[size]
+                if not equalHighLow and not internal
+                    trailing.top := p.currentLevel
+                    trailing.barTime := p.barTime
+                    trailing.barIndex := p.barIndex
+                    trailing.lastTopTime := p.barTime
+                if showSwingsInput and not internal and not equalHighLow
+                    drawLabel(time[size], p.currentLevel, p.currentLevel > p.lastLevel ? 'HH' : 'LH', swingBearColorInput, label.style_label_down)
+
+drawStructure(pivot p_ivot, string tag, color structureColor, string lineStyle, string labelStyle, string labelSize) =>
+    var line l_ine = na
+    var label l_abel = na
+    if modeInput == PRESENT
+        line.delete(l_ine)
+        label.delete(l_abel)
+    l_ine := line.new(chart.point.new(p_ivot.barTime, na, p_ivot.currentLevel), chart.point.new(time, na, p_ivot.currentLevel), xloc.bar_time, color = structureColor, style = lineStyle)
+    l_abel := label.new(chart.point.new(na, math.round(0.5 * (p_ivot.barIndex + bar_index)), p_ivot.currentLevel), tag, xloc.bar_index, color = color(na), textcolor = structureColor, style = labelStyle, size = labelSize)
+
+displayStructure(bool internal = false) =>
+    bool bBar = true
+    bool sBar = true
+    if internalFilterConfluenceInput
+        bBar := high - math.max(close, open) > math.min(close, open - low)
+        sBar := high - math.max(close, open) < math.min(close, open - low)
+
+    pivot pH = internal ? internalHigh : swingHigh
+    trend t = internal ? internalTrend : swingTrend
+    lStyle = internal ? line.style_dashed : line.style_solid
+    lSize = internal ? internalStructureSize : swingStructureSize
+    bColor = internal ? internalBullColorInput : swingBullColorInput
+
+    if ta.crossover(close, pH.currentLevel) and not pH.crossed and (not internal or (pH.currentLevel != swingHigh.currentLevel and bBar))
+        string tag = t.bias == BEARISH ? MSS : BOS
+        if internal
+            currentAlerts.internalBullishMSS := tag == MSS
+            currentAlerts.internalBullishBOS := tag == BOS
+        else
+            currentAlerts.swingBullishMSS := tag == MSS
+            currentAlerts.swingBullishBOS := tag == BOS
+        pH.crossed := true
+        t.bias := BULLISH
+        display = internal ? showInternalsInput and (showInternalBullInput == ALL or (showInternalBullInput == BOS and tag != MSS) or (showInternalBullInput == MSS and tag == MSS)) : showStructureInput and (showSwingBullInput == ALL or (showSwingBullInput == BOS and tag != MSS) or (showSwingBullInput == MSS and tag == MSS))
+        if display
+            drawStructure(pH, tag, bColor, lStyle, label.style_label_down, lSize)
+
+    pivot pL = internal ? internalLow : swingLow
+    sColor = internal ? internalBearColorInput : swingBearColorInput
+
+    if ta.crossunder(close, pL.currentLevel) and not pL.crossed and (not internal or (pL.currentLevel != swingLow.currentLevel and sBar))
+        string tag = t.bias == BULLISH ? MSS : BOS
+        if internal
+            currentAlerts.internalBearishMSS := tag == MSS
+            currentAlerts.internalBearishBOS := tag == BOS
+        else
+            currentAlerts.swingBearishMSS := tag == MSS
+            currentAlerts.swingBearishBOS := tag == BOS
+        pL.crossed := true
+        t.bias := BEARISH
+        display = internal ? showInternalsInput and (showInternalBearInput == ALL or (showInternalBearInput == BOS and tag != MSS) or (showInternalBearInput == MSS and tag == MSS)) : showStructureInput and (showSwingBearInput == ALL or (showSwingBearInput == BOS and tag != MSS) or (showSwingBearInput == MSS and tag == MSS))
+        if display
+            drawStructure(pL, tag, sColor, lStyle, label.style_label_up, lSize)
+
+updateTrailingExtremes() =>
+    trailing.top := math.max(high, na(trailing.top) ? high : trailing.top)
+    trailing.lastTopTime := (trailing.top == high) ? time : trailing.lastTopTime
+    trailing.bottom := math.min(low, na(trailing.bottom) ? low : trailing.bottom)
+    trailing.lastBottomTime := (trailing.bottom == low) ? time : trailing.lastBottomTime
+
+drawHighLowSwings() =>
+    var line tL = line.new(na, na, na, na, color = swingBearColorInput, xloc = xloc.bar_time)
+    var line bL = line.new(na, na, na, na, color = swingBullColorInput, xloc = xloc.bar_time)
+    var label tLab = label.new(na, na, color = color(na), textcolor = swingBearColorInput, xloc = xloc.bar_time, style = label.style_label_down, size = size.tiny)
+    var label bLab = label.new(na, na, color = color(na), textcolor = swingBullColorInput, xloc = xloc.bar_time, style = label.style_label_up, size = size.tiny)
+    
+    rTime = last_bar_time + 20 * (time - time[1])
+    line.set_xy1(tL, trailing.lastTopTime, trailing.top)
+    line.set_xy2(tL, rTime, trailing.top)
+    label.set_xy(tLab, rTime, trailing.top)
+    label.set_text(tLab, swingTrend.bias == BEARISH ? 'Strong High' : 'Weak High')
+    
+    line.set_xy1(bL, trailing.lastBottomTime, trailing.bottom)
+    line.set_xy2(bL, rTime, trailing.bottom)
+    label.set_xy(bLab, rTime, trailing.bottom)
+    label.set_text(bLab, swingTrend.bias == BULLISH ? 'Strong Low' : 'Weak Low')
+
+drawZone(float labelLevel, int labelIndex, float top, float bottom, string tag, color zoneColor, string style) =>
+    var label l = label.new(na, na, text = tag, color = color(na), textcolor = zoneColor, style = style, size = size.small)
+    var box b = box.new(na, na, na, na, bgcolor = color.new(zoneColor, 80), border_color = color(na), xloc = xloc.bar_time)
+    box.set_top_left_point(b, chart.point.new(trailing.barTime, na, top))
+    box.set_bottom_right_point(b, chart.point.new(last_bar_time, na, bottom))
+    label.set_point(l, chart.point.new(na, labelIndex, labelLevel))
+
+drawPremiumDiscountZones() =>
+    if not na(trailing.top) and not na(trailing.bottom)
+        drawZone(trailing.top, math.round(0.5 * (trailing.barIndex + bar_index)), trailing.top, 0.95 * trailing.top + 0.05 * trailing.bottom, 'Premium', premiumZoneColorInput, label.style_label_down)
+        eq = math.avg(trailing.top, trailing.bottom)
+        drawZone(eq, bar_index, 0.525 * trailing.top + 0.475 * trailing.bottom, 0.525 * trailing.bottom + 0.475 * trailing.top, 'Equilibrium', equilibriumZoneColorInput, label.style_label_left)
+        
+        var line eqLine = line.new(na, na, na, na, color = equilibriumZoneColorInput, style = line.style_dashed, xloc = xloc.bar_time)
+        line.set_xy1(eqLine, trailing.barTime, eq)
+        line.set_xy2(eqLine, last_bar_time, eq)
+        
+        // CORRECCIÓN AQUÍ: Se agrego el argumento 'trailing.bottom' faltante
+        drawZone(trailing.bottom, math.round(0.5 * (trailing.barIndex + bar_index)), 0.95 * trailing.bottom + 0.05 * trailing.top, trailing.bottom, 'Discount', discountZoneColorInput, label.style_label_up)
+
+//---------------------------------------------------------------------------------------------------------------------
+// EXECUTION SMC
+//---------------------------------------------------------------------------------------------------------------------
+candleColor = internalTrend.bias == BULLISH ? internalBullColorInput : internalBearColorInput
+plotcandle(showTrendInput ? open : na, high, low, close, color = candleColor, wickcolor = candleColor, bordercolor = candleColor, display = display.all - display.price_scale)
+
+if showHighLowSwingsInput or showPremiumDiscountZonesInput
+    updateTrailingExtremes()
+    if showHighLowSwingsInput
+        drawHighLowSwings()
+    if showPremiumDiscountZonesInput
+        drawPremiumDiscountZones()
+
+getCurrentStructure(swingsLengthInput, false)
+getCurrentStructure(5, false, true)
+
+if showEqualHighsLowsInput
+    // Bars Confirmation hardcodeado a 3
+    getCurrentStructure(3, true)
+
+if showInternalsInput or showTrendInput
+    displayStructure(true)
+
+if showStructureInput or showHighLowSwingsInput
+    displayStructure()
+
+//---------------------------------------------------------------------------------------------------------------------
+// ALERTS SMC
+//---------------------------------------------------------------------------------------------------------------------
+alertcondition(currentAlerts.internalBullishBOS, 'Internal Bullish BOS', 'Internal Bullish BOS formado')
+alertcondition(currentAlerts.internalBullishMSS, 'Internal Bullish MSS', 'Internal Bullish MSS formado')
+alertcondition(currentAlerts.internalBearishBOS, 'Internal Bearish BOS', 'Internal Bearish BOS formado')
+alertcondition(currentAlerts.internalBearishMSS, 'Internal Bearish MSS', 'Internal Bearish MSS formado')
+
+alertcondition(currentAlerts.swingBullishBOS, 'Bullish BOS', 'Bullish BOS formado')
+alertcondition(currentAlerts.swingBullishMSS, 'Bullish MSS', 'Bullish MSS formado')
+alertcondition(currentAlerts.swingBearishBOS, 'Bearish BOS', 'Bearish BOS formado')
+alertcondition(currentAlerts.swingBearishMSS, 'Bearish MSS', 'Bearish MSS formado')
+
+alertcondition(currentAlerts.equalHighs, 'Equal Highs', 'Equal highs detectados')
+alertcondition(currentAlerts.equalLows, 'Equal Lows', 'Equal lows detectados')
+
+// -------------------------------------------------------------------------
+// --- INICIO DEL INDICADOR 2: SESSIONS + LIQUIDITY + FVG ---
+// -------------------------------------------------------------------------
+
+// ==============================================================================
+// 1. DEFINICIÓN DE TIPOS (TYPES) - GLOBAL
+// ==============================================================================
+
+// --- Types de Macros ---
+type macro
+    int   t1 = 0
+    int   t2 = 0
+    float top = na
+    float bottom = na
+    line  lnh = na
+    line  lnl = na
+    linefill lf = na
+    label lb = na
+
+// --- Types de FVG ---
+type FVG
+    box b
+    float top
+    float bottom
+    bool is_bull
+    bool active
+    bool touched
+    string label
+    color col_bull
+    color col_bear
+
+// --- Types de Sessions & Liquidity ---
+type hz
+    array<line> LN
+    array<label> LB
+    array<bool> CO
+
+type sess_liq
+    array<line> _hi_line
+    array<line> _lo_line
+    array<label> _hi_label
+    array<label> _lo_label
+    array<bool> _hi_valid
+    array<bool> _lo_valid
+
+type lines_helper
+    hz _hz
+    string h
+    string h_text
+    color h_color
+
+type sess_helper
+    sess_liq _sess
+    string session
+    color c
+    string hi_txt
+    string lo_txt
+
+type dwm_hl
+    array<line> hi_line
+    array<line> lo_line
+    array<label> hi_label
+    array<label> lo_label
+    array<bool> hi_valid
+    array<bool> lo_valid
+
+type dwm_info
+    string tf
+    float h = na
+    float l = na
+    float ph = na
+    float pl = na
+
+type LiqLevel
+    float price
+    bool  isHigh      
+    int   startTime   
+    line  lvlLine
+    label lvlLabel
+    string tfText     
+
+type SweepObj
+    line swpLine
+    label swpLabel
+
+// ==============================================================================
+// 2. INPUTS Y CONFIGURACIÓN
+// ==============================================================================
+
+// --- Configuración: FVGs & IFVGs ---
+group_fvg = "FVGs & IFVGs"
+show_fvg  = input.bool(false, "Show FVG", inline = "fvg1", group = group_fvg)
+txt_size   = input.string(size.tiny, "Text Size", options = [size.tiny, size.small, size.normal], inline = "fvgt", group = group_fvg)
+txt_col    = input.color(#000000, "Text Color", inline = "fvgt", group = group_fvg)
+tf_bull    = input.color(#80808040, "Bullish FVG", inline = "fvgs", group = group_fvg)
+tf_bear    = input.color(#80808040, "Bearish FVG", inline = "fvgs", group = group_fvg)
+
+// --- Configuración: Macros ---
+var group_macros = 'Macros'
+m02330300 = input.bool(false, '02:33 - 03:00', inline = 'london', group = group_macros)
+m04030430 = input.bool(false, '04:03 - 04:30', inline = 'london', group = group_macros, tooltip = "London Macros")
+
+m08500910 = input.bool(false, '08:50 - 09:10', inline = 'nyam', group = group_macros)
+m09501010 = input.bool(false, '09:50 - 10:10', inline = 'nyam', group = group_macros)
+m10501110 = input.bool(false, '10:50 - 11:10', inline = 'nyam', group = group_macros, tooltip = "New York AM Macros")
+
+m11501210 = input.bool(false, '11:50 - 12:10', inline = 'nylaunch', group = group_macros)
+m12501310 = input.bool(false, '12:50 - 13:10', inline = 'nylaunch', group = group_macros, tooltip = "New York Lunch Macros")
+
+m13501410 = input.bool(false, '13:50 - 14:10', inline = 'nypm', group = group_macros)
+m14501510 = input.bool(false, '14:50 - 15:10', inline = 'nypm', group = group_macros)
+m15151545 = input.bool(false, '15:15 - 15:45', inline = 'nypm', group = group_macros, tooltip = "New York PM Macros")
+
+mcText          = input.string('Tiny', 'Label Size', options = ['Tiny', 'Small', 'Normal', 'None'], inline = 'style', group = group_macros)
+globalBoxColor  = input.color(#63636310, 'Fill Color', inline = 'style', group = group_macros)
+globalLineColor = input.color(#000000, 'Line Color', inline = 'style', group = group_macros)
+
+mcSize = switch mcText
+    'Tiny'   => size.tiny
+    'Small'  => size.small
+    'Normal' => size.normal
+    => size.tiny
+
+// --- Configuración: Global Sweeps ---
+var grp_swp = "Liquidity Sweeps Settings"
+showSwp     = input.bool(true, "Show Sweeps |", inline = "sweeps1", group = grp_swp)
+colSwp      = input.color(color.rgb(255, 255, 255), "Sweep Color", inline = "sweeps1", group = grp_swp)
+txtSwpInput = input.string("$$$", "", inline = "sweeps1", group = grp_swp)
+swpStyleOpt = input.string("Solid", "Sweep Line Style", options = ["Solid", "Dotted", "Dashed"], inline = "sweepssty", group = grp_swp)
+swpSizeOpt  = input.string("Tiny", "Sweep Text Size", options = ["Tiny", "Small", "Normal", "Large"], inline = "sweepssty", group = grp_swp)
+
+// --- Configuración: Sessions Liquidity ---
+var g_sess = "Sessions Liquidity"
+lookback_days       = input.int(1, "Lookback (Days)", 1, inline = 'sess_g1', group = g_sess)
+sess_style          = input.string('Dotted', "", options = ['Solid', 'Dotted', 'Dashed'], inline = "sess_g1", group = g_sess)
+lbl_size_input      = input.string('Tiny', "", options = ['Auto', 'Tiny', 'Small', 'Normal', 'Large', 'Huge'], inline = 'sess_g1', group = g_sess)
+
+use_nyam            = input.bool(true, "NY AM", inline = "NYAM", group = g_sess)
+nyam                = input.session("0930-1100", "", inline = "NYAM", group = g_sess)
+na_color            = input.color(#000000, "", inline = "NYAM", group = g_sess)
+
+use_nylu            = input.bool(true, "NY Lunch", inline = "NYLU", group = g_sess)
+nylu                = input.session("1200-1300", "", inline = "NYLU", group = g_sess)
+nl_color            = input.color(#000000, "", inline = "NYLU", group = g_sess)
+
+use_nypm            = input.bool(true, "NY PM", inline = "NYPM", group = g_sess)
+nypm                = input.session("1330-1600", "", inline = "NYPM", group = g_sess)
+np_color            = input.color(#000000, "", inline = "NYPM", group = g_sess)
+
+use_asia            = input.bool(true, "Asia", inline = "ASIA", group = g_sess)
+asia                = input.session("2000-0000", "", inline = "ASIA", group = g_sess)
+as_color            = input.color(#000000, "", inline = "ASIA", group = g_sess)
+
+use_london          = input.bool(true, "London", inline = "LONDON", group = g_sess)
+london              = input.session("0200-0500", "", inline = "LONDON", group = g_sess)
+lo_color            = input.color(#000000, "", inline = "LONDON", group = g_sess)
+
+// --- Configuración: DWM Highs & Lows ---
+var g_DWM = "DWM Highs & Lows"
+dhl_dwm             = input.bool(true, "PDH/PDL", inline = "phl", group = g_DWM)
+d_color             = input.color(#000000, "", inline = "phl", group = g_DWM)
+whl                 = input.bool(false, "PWH/PWL", inline = "phl", group = g_DWM)
+w_color             = input.color(#000000, "", inline = "phl", group = g_DWM)
+mhl                 = input.bool(false, "PMH/PML", inline = "phl", group = g_DWM)
+m_color             = input.color(#000000, "", inline = "phl", group = g_DWM)
+
+htf_lbl_size_input  = input.string('Tiny', "Label Size", options = ['Auto', 'Tiny', 'Small', 'Normal', 'Large', 'Huge'], inline = "D0", group = g_DWM)
+htf_style_input     = input.string('Dotted', "Line Style", options = ['Solid', 'Dotted', 'Dashed'], inline = "D0", group = g_DWM)
+
+// --- Configuración: Key Openings ---
+var key_OPEN        = "Key Openings"
+use_h1              = input.bool(true, "N.Y.M.O", inline = "key_op", group = key_OPEN)
+h1_color            = input.color(#000000, "", inline = "key_op", group = key_OPEN)
+use_h2              = input.bool(true, "8:30", inline = "key_op", group = key_OPEN)
+h2_color            = input.color(#000000, "", inline = "key_op", group = key_OPEN)
+use_h3              = input.bool(false, "9:30", inline = "key_op", group = key_OPEN)
+h3_color            = input.color(#000000, "", inline = "key_op", group = key_OPEN)
+
+hz_lbl_size_input   = input.string('Tiny', "Label Size", options = ['Auto', 'Tiny', 'Small', 'Normal', 'Large', 'Huge'], inline = "key_sty", group = key_OPEN)
+hz_style_input      = input.string('Dotted', "Line Style", options = ['Solid', 'Dotted', 'Dashed'], inline = "key_sty", group = key_OPEN)
+
+// --- Configuración: Data High / Low ---
+var g_datahl = "Data High / Low"
+showLevels = input.bool(true, 'Show Data High/Low |', inline = "dhl1", group = g_datahl)
+lineColor = input.color(color.black, 'Línes', inline = "dhl1", group = g_datahl)
+textColor = input.color(color.white, 'Text', inline = "dhl1", group = g_datahl)
+lineStyleInput = input.string('Sólido', 'Line Style', options = ['Sólido', 'Punteado', 'Guiones'], inline = "dhls", group = g_datahl)
+textSizeInput = input.string('Pequeño', 'Text Size', options = ['Diminuto', 'Pequeño', 'Normal', 'Grande'], inline = "dhls", group = g_datahl)
+useNewsFilter = input.bool(true, "News Filter |", inline = "dhlnews", group = g_datahl)
+newsDatesInput = input.string("", "Dates", inline = "dhlnews", group = g_datahl, tooltip = "Fechas: DD/MM/AAAA, separado por comas.")
+
+// --- Configuración: Liquidity Swing Points ---
+grp_liq = "Liquidity Swing Points"
+alignMode = input.string("Auto", "Alignment", options = ["Auto", "Manual"], group = grp_liq, inline = "1")
+manualTF  = input.timeframe("15", "TimeFrame", group = grp_liq, inline = "1")
+showLiq   = input.bool(true, "Show Swing Points |", group = grp_liq, inline = "2")
+colBull   = input.color(color.black, "Bullish", group = grp_liq, inline = "2")
+colBear   = input.color(color.black, "Bearish", group = grp_liq, inline = "2")
+styleOpt  = input.string("Dotted", "Line Style", options = ["Solid", "Dotted", "Dashed"], group = grp_liq, inline = "3")
+sizeOpt   = input.string("Tiny", "Text Size", options = ["Tiny", "Small", "Normal", "Large"], group = grp_liq, inline = "3")
+
+// --- Configuración: SMT Divergencias (AÑADIDO DEL SCRIPT 2) ---
+var g_smt = "SMT"
+showSmt = input.bool(true, 'Enable SMT Detection', inline = "smt1", group = g_smt)
+// Symbol A
+useSym1 = input(true, 'Symbol A', inline = 'symA', group = g_smt)
+sym1 = input.symbol('CME_MINI_DL:ES1!', '', inline = 'symA', group = g_smt)
+// Symbol B
+useSym2 = input(false, 'Symbol B', inline = 'symB', group = g_smt)
+sym2 = input.symbol('CBOT_MINI_DL:YM1!', '', inline = 'symB', group = g_smt)
+// Style
+smtStyleInput = input.string('Solid', 'Line Style', options = ['Solid', 'Dashed', 'Dotted'], inline = "smtline", group = g_smt)
+smtColor = input.color(color.rgb(78, 78, 78), 'Line Color', inline = "smtline", group = g_smt)
+labelSizeInput = input.string('Tiny', 'Label Size', options = ['Tiny', 'Small', 'Normal', 'Large'], inline = "smtlbl",group = g_smt)
+textColorInput = input.color(color.white, 'Text Color', inline = "smtlbl", group = g_smt)
+smt_length = 3 // Variable para longitud del SMT
+
+// ==============================================================================
+// 3. FUNCIONES AUXILIARES
+// ==============================================================================
+
+// --- Utilerías de Estilos ---
+get_line_type_global(x) =>
+    switch x
+        "Solid"  => line.style_solid
+        "Dotted" => line.style_dotted
+        "Dashed" => line.style_dashed
+        => line.style_solid
+
+get_size_global(x) =>
+    switch x
+        "Tiny"   => size.tiny
+        "Small"  => size.small
+        "Normal" => size.normal
+        "Large"  => size.large
+        "Huge"   => size.huge
+        => size.normal
+
+// --- Funciones SMT (AÑADIDO DEL SCRIPT 2) ---
+// Convert string input to line style
+var smt_line_style = smtStyleInput == 'Solid' ? line.style_solid : smtStyleInput == 'Dashed' ? line.style_dashed : line.style_dotted
+
+get_hl() =>
+    [high, low, close]
+
+f_labelSize(x) => 
+    x == 'Tiny' ? size.tiny : x == 'Small' ? size.small : x == 'Normal' ? size.normal : size.large
+
+// Swing highs/lows divergences function
+get_divergence(ph, y2, sym_y2, css) =>
+    var float y1 = na
+    var float sym_y1 = na
+    var int x1 = na
+    var smt = 0
+    n = bar_index // Referencia local para SMT
+
+    if y2 != y2[1] and sym_y2 != sym_y2[1]
+        // Test for SMT
+        if (y2 - y1) * (sym_y2 - sym_y1) < 0
+            if showSmt
+                line.new(n[smt_length], y2, x1, y1, color = css, style = smt_line_style)
+            
+            smt := smt + 1
+            smt
+
+        sym_y1 := sym_y2
+        y1 := y2
+        x1 := n[smt_length]
+        x1
+    else if ph and y2 > y2[1] or not ph and y2 < y2[1]
+        sym_y1 := na
+        y1 := y2
+        x1 := n[smt_length]
+        x1
+
+    smt
+
+// --- Método Move para Macros ---
+method move(line _l, int _x1, float _y1, int _x2, float _y2) =>
+    if not na(_l)
+        _l.set_xy1(_x1, _y1)
+        _l.set_xy2(_x2, _y2)
+
+// --- Funciones FVG ---
+get_auto_label(string tf) =>
+    string label = ""
+    string p = tf == "" ? timeframe.period : tf
+    if str.contains(p, "D") 
+        label := "D"
+    else if str.contains(p, "W") 
+        label := "W"
+    else if str.contains(p, "M") 
+        label := "M"
+    else
+        float mins = str.tonumber(p)
+        label := mins >= 60 ? str.tostring(math.floor(mins / 60)) + "H" : p + "m"
+    label
+
+update_appearance(FVG f, bool _visible, color _txt_col) =>
+    string prefix = f.active ? "FVG " : "IFVG "
+    color c_ifvg_bull = color.new(color.blue, 75)
+    color c_ifvg_bear = color.new(color.orange, 75)
+    
+    color base_bg = f.active ? (f.is_bull ? f.col_bull : f.col_bear) : (f.is_bull ? c_ifvg_bull : c_ifvg_bear)
+    color final_bg = _visible ? base_bg : color.new(color.white, 100)
+    color final_txt = _visible ? _txt_col : color.new(color.white, 100)
+    
+    box.set_bgcolor(f.b, final_bg)
+    box.set_border_color(f.b, final_bg)
+    box.set_text(f.b, _visible ? prefix + f.label : "")
+    box.set_text_color(f.b, final_txt)
+    box.set_text_size(f.b, txt_size)
+    box.set_text_halign(f.b, text.align_right)
+
+// --- Funciones de Sessions & Liquidity ---
+millisecons_in_lookback = lookback_days * 24 * 60 * 60 * 1000
+is_within_lookback() => (timenow - time) <= millisecons_in_lookback
+
+swp_line_style = get_line_type_global(swpStyleOpt)
+swp_lbl_size   = get_size_global(swpSizeOpt)
+
+draw_sweep_event(start_t, price, _color, _style) =>
+    if showSwp and is_within_lookback()
+        line.new(start_t, price, time, price, xloc = xloc.bar_time, color = _color, style = _style)
+
+getFriendlyTF(tf) =>
+    if tf == "1"
+        "1m"
+    else if tf == "3"
+        "3m"
+    else if tf == "5"
+        "5m"
+    else if tf == "15"
+        "15m"
+    else if tf == "30"
+        "30m"
+    else if tf == "45"
+        "45m"
+    else if tf == "60"
+        "1H"
+    else if tf == "120"
+        "2H"
+    else if tf == "240"
+        "4H"
+    else if tf == "D" or tf == "1D"
+        "D"
+    else if tf == "W" or tf == "1W"
+        "W"
+    else if tf == "M" or tf == "1M"
+        "M"
+    else
+        tf 
+
+update_dwm_info(dwm_info n) =>
+    if timeframe.change(n.tf)
+        n.ph := n.h, n.pl := n.l, n.h := high, n.l := low
+    else
+        n.h := math.max(high, n.h), n.l := math.min(low, n.l)
+
+// ==============================================================================
+// 4. VARIABLES GLOBALES Y ESTADO
+// ==============================================================================
+
+// --- Estado Macros ---
+var macro mc = macro.new()
+isToday = dayofmonth(time, "America/New_York") == dayofmonth(timenow, "America/New_York") and month(time, "America/New_York") == month(timenow, "America/New_York") and year(time, "America/New_York") == year(timenow, "America/New_York")
+
+// --- Estado FVG ---
+int visual_limit = 2 
+int hard_limit = 200 
+var fvg_list = array.new<FVG>()
+
+// --- Estado Sessions & Liquidity ---
+sess_style_val = get_line_type_global(sess_style)
+lbl_size = get_size_global(lbl_size_input)
+htf_style = get_line_type_global(htf_style_input)
+htf_lbl_size = get_size_global(htf_lbl_size_input)
+htf_width = 1
+
+hz_style = get_line_type_global(hz_style_input)
+hz_lbl_size = get_size_global(hz_lbl_size_input)
+hz_width = 1
+
+h1_text = "N.Y.M.O", h1 = "0000-0001"
+h2_text = "8:30", h2 = "0830-0831"
+h3_text = "9:30", h3 = "0930-0931"
+
+var array<lines_helper> lines = array.new<lines_helper>()
+if barstate.isfirst
+    if use_h1
+        lines.push(lines_helper.new(hz.new(array.new_line(), array.new_label(), array.new_bool()), h1, h1_text, h1_color))
+    if use_h2
+        lines.push(lines_helper.new(hz.new(array.new_line(), array.new_label(), array.new_bool()), h2, h2_text, h2_color))
+    if use_h3
+        lines.push(lines_helper.new(hz.new(array.new_line(), array.new_label(), array.new_bool()), h3, h3_text, h3_color))
+
+// Cadenas hardcodeadas para labels de sesión
+ash_str = "AS.H", asl_str = "AS.L"
+loh_str = "LO.H", lol_str = "LO.L"
+nah_str = "NYAM.H", nal_str = "NYAM.L"
+nlh_str = "NYL.H", nll_str = "NYL.L"
+nph_str = "NYPM.H", npl_str = "NYPM.L"
+sess_width = 1
+
+var array<sess_helper> _sessions = array.new<sess_helper>()
+if barstate.isfirst
+    if use_asia
+        _sessions.push(sess_helper.new(sess_liq.new(array.new_line(), array.new_line(), array.new_label(), array.new_label(), array.new_bool(), array.new_bool()), asia, as_color, ash_str, asl_str))
+    if use_london
+        _sessions.push(sess_helper.new(sess_liq.new(array.new_line(), array.new_line(), array.new_label(), array.new_label(), array.new_bool(), array.new_bool()), london, lo_color, loh_str, lol_str))
+    if use_nyam
+        _sessions.push(sess_helper.new(sess_liq.new(array.new_line(), array.new_line(), array.new_label(), array.new_label(), array.new_bool(), array.new_bool()), nyam, na_color, nah_str, nal_str))
+    if use_nylu
+        _sessions.push(sess_helper.new(sess_liq.new(array.new_line(), array.new_line(), array.new_label(), array.new_label(), array.new_bool(), array.new_bool()), nylu, nl_color, nlh_str, nll_str))
+    if use_nypm
+        _sessions.push(sess_helper.new(sess_liq.new(array.new_line(), array.new_line(), array.new_label(), array.new_label(), array.new_bool(), array.new_bool()), nypm, np_color, nph_str, npl_str))
+
+var d_info = dwm_info.new("D")
+var d_hl = dwm_hl.new(array.new_line(), array.new_line(), array.new_label(), array.new_label(), array.new_bool(), array.new_bool())
+var w_info = dwm_info.new("W")
+var w_hl   = dwm_hl.new(array.new_line(), array.new_line(), array.new_label(), array.new_label(), array.new_bool(), array.new_bool())
+var m_info = dwm_info.new("M")
+var m_hl   = dwm_hl.new(array.new_line(), array.new_line(), array.new_label(), array.new_label(), array.new_bool(), array.new_bool())
+
+var transparent = #ffffff00
+var ext_current = false 
+var ext_past = false
+
+// ==============================================================================
+// 5. LÓGICA DE EJECUCIÓN (MAIN LOOP)
+// ==============================================================================
+
+// -------------------------------------------------------------------------
+// A. Lógica Macros
+// -------------------------------------------------------------------------
+processMacro(bool _en, int _sh, int _sm, int _dur, string _mt) =>
+    if _en and isToday
+        int startTS = timestamp("America/New_York", year(time, "America/New_York"), month(time, "America/New_York"), dayofmonth(time, "America/New_York"), _sh, _sm, 0)
+        int endTS   = startTS + (_dur * 60000)
+        
+        if time <= startTS and time_close > startTS
+            mc.t1 := startTS
+            mc.t2 := endTS
+            mc.top := high
+            mc.bottom := low
+            
+            mc.lnh := line.new(mc.t1, mc.top, mc.t2, mc.top, xloc.bar_time, color = globalLineColor, width = 2)
+            mc.lnl := line.new(mc.t1, mc.bottom, mc.t2, mc.bottom, xloc.bar_time, color = globalLineColor, width = 2)
+            mc.lf  := linefill.new(mc.lnh, mc.lnl, globalBoxColor)
+            mc.lb  := label.new(mc.t1, mc.top, mcText != 'None' ? _mt : '', xloc.bar_time, color = #00000000, textcolor = globalLineColor, style = label.style_label_down, size = mcSize)
+
+        if time >= mc.t1 and time < mc.t2
+            mc.top := math.max(high, nz(mc.top, high))
+            mc.bottom := math.min(low, nz(mc.bottom, low))
+            mc.lnh.move(mc.t1, mc.top, mc.t2, mc.top)
+            mc.lnl.move(mc.t1, mc.bottom, mc.t2, mc.bottom)
+        
+        if not na(mc.lb)
+            mc.lb.set_xy(int(math.avg(mc.t1, mc.t2)), mc.top)
+    0
+
+isCorrectTF = (timeframe.isintraday and timeframe.multiplier <= 5) or timeframe.isseconds
+if isCorrectTF
+    processMacro(m02330300, 2, 33, 27, "02:33 - 03:00 London")
+    processMacro(m04030430, 4, 03, 27, "04:03 - 04:30 London")
+    processMacro(m08500910, 8, 50, 20, "08:50 - 09:10 NY AM")
+    processMacro(m09501010, 9, 50, 20, "09:50 - 10:10 NY AM")
+    processMacro(m10501110, 10, 50, 20, "10:50 - 11:10 NY AM")
+    processMacro(m11501210, 11, 50, 20, "11:50 - 12:10 NY Launch")
+    processMacro(m12501310, 12, 50, 20, "12:50 - 13:10 NY Launch") 
+    processMacro(m13501410, 13, 50, 20, "13:50 - 14:10 NY PM") 
+    processMacro(m14501510, 14, 50, 20, "14:50 - 15:10 NY PM") 
+    processMacro(m15151545, 15, 15, 30, "15:15 - 15:45 NY PM")
+
+// -------------------------------------------------------------------------
+// B. Lógica FVG
+// -------------------------------------------------------------------------
+fn_process(color bull_c, color bear_c) =>
+    string tf_str = "" 
+    float h0 = high, l0 = low
+    float h2 = high[2], l2 = low[2]
+    int t_start = time[2]
+    bool detect_bull = l0 > h2
+    bool detect_bear = h0 < l2
+    bool mis_confluencias_fvg = true 
+    bool is_bull = detect_bull and mis_confluencias_fvg
+    bool is_bear = detect_bear and mis_confluencias_fvg
+    float top_p = is_bull ? l0 : l2
+    float bot_p = is_bull ? h2 : h0
+    bool within_limit = hard_limit == 0 or (bar_index - bar_index[2]) <= hard_limit
+
+    if (is_bull or is_bear) and within_limit
+        box_id = box.new(left = t_start, top = top_p, right = time, bottom = bot_p, xloc = xloc.bar_time, border_width = 1)
+        new_entry = FVG.new(box_id, top_p, bot_p, is_bull, true, false, get_auto_label(tf_str), bull_c, bear_c)
+        array.push(fvg_list, new_entry)
+
+if barstate.isconfirmed
+    fn_process(tf_bull, tf_bear)
+
+if array.size(fvg_list) > 0
+    float[] distances = array.new_float()
+    
+    for i = 0 to array.size(fvg_list) - 1
+        FVG f = array.get(fvg_list, i)
+        if f.active
+            float mid_price = (f.top + f.bottom) / 2
+            array.push(distances, math.abs(close - mid_price))
+        else
+            array.push(distances, 99999999.9)
+
+    float[] sorted_dists = array.copy(distances)
+    array.sort(sorted_dists)
+    float cutoff_dist = 99999999.9
+    if array.size(sorted_dists) > visual_limit
+        cutoff_dist := array.get(sorted_dists, visual_limit - 1)
+
+    for i = array.size(fvg_list) - 1 to 0
+        FVG f = array.get(fvg_list, i)
+        if f.active 
+            box.set_right(f.b, time)
+        if f.active
+            if not f.touched and ((f.is_bull and low < f.top) or (not f.is_bull and high > f.bottom))
+                f.touched := true
+            if (f.is_bull and close < f.bottom) or (not f.is_bull and close > f.top)
+                f.active := false
+        
+        bool should_be_visible = false
+        if f.active and show_fvg
+            float my_dist = array.get(distances, i)
+            if my_dist <= cutoff_dist and my_dist < 99999999.0
+                should_be_visible := true
+        if not f.active
+            should_be_visible := false
+        update_appearance(f, should_be_visible, txt_col)
+
+    if array.size(fvg_list) > hard_limit
+        FVG item_to_delete = array.get(fvg_list, 0)
+        box.delete(item_to_delete.b)
+        array.remove(fvg_list, 0)
+
+// -------------------------------------------------------------------------
+// C. Lógica Sessions & Sweeps & DWM
+// -------------------------------------------------------------------------
+
+// --- Funciones DWM Execution ---
+dwm_hl_func(string tf, bool use, dwm_hl hl, dwm_info n, color col) =>
+    if use
+        if timeframe.change(tf)
+            hl.hi_line.unshift(line.new(time, n.ph, time, n.ph, xloc = xloc.bar_time, style = htf_style, width = htf_width, color = col))
+            hl.lo_line.unshift(line.new(time, n.pl, time, n.pl, xloc = xloc.bar_time, style = htf_style, width = htf_width, color = col))
+            hl.hi_label.unshift(label.new(time, n.ph, "P" + tf + "H", xloc = xloc.bar_time, style = label.style_label_down, color = #ffffff00, textcolor = col, size = htf_lbl_size))
+            hl.lo_label.unshift(label.new(time, n.pl, "P" + tf + "L", xloc = xloc.bar_time, style = label.style_label_up, color = #ffffff00, textcolor = col, size = htf_lbl_size))
+            hl.hi_valid.unshift(true)
+            hl.lo_valid.unshift(true)
+            if hl.hi_line.size() > lookback_days
+                hl.hi_line.pop().delete(), hl.lo_line.pop().delete(), hl.hi_label.pop().delete(), hl.lo_label.pop().delete()
+                hl.hi_valid.pop(), hl.lo_valid.pop()
+
+        cnt = hl.hi_line.size()
+        if cnt > 0
+            for i = 0 to cnt - 1
+                if hl.hi_valid.get(i)
+                    hl.hi_line.get(i).set_x2(time)
+                    if high > hl.hi_line.get(i).get_y1()
+                        hl.hi_valid.set(i, false)
+                        draw_sweep_event(hl.hi_line.get(i).get_x1(), hl.hi_line.get(i).get_y1(), colSwp, swp_line_style)
+                if hl.lo_valid.get(i)
+                    hl.lo_line.get(i).set_x2(time)
+                    if low < hl.lo_line.get(i).get_y1()
+                        hl.lo_valid.set(i, false)
+                        draw_sweep_event(hl.lo_line.get(i).get_x1(), hl.lo_line.get(i).get_y1(), colSwp, swp_line_style)
+
+// Update DWM
+update_dwm_info(d_info)
+update_dwm_info(w_info)
+update_dwm_info(m_info)
+
+tf_limit = "30"
+var tf_limit_is_equal_or_more_chart_tf = timeframe.in_seconds('') <= timeframe.in_seconds(tf_limit)
+if tf_limit_is_equal_or_more_chart_tf
+    dwm_hl_func("D", dhl_dwm, d_hl, d_info, d_color)
+    dwm_hl_func("W", whl, w_hl, w_info, w_color)
+    dwm_hl_func("M", mhl, m_hl, m_info, m_color)
+
+// --- Session & Pivot Logic ---
+gmt_tz = 'America/New_York'
+if is_within_lookback()
+    for [_, value] in _sessions
+        sess_liq sess = value._sess
+        if tf_limit_is_equal_or_more_chart_tf
+            t = not na(time("", value.session, gmt_tz))
+            t_prev = not na(time("", value.session, gmt_tz, bars_back = 1))
+            
+            if t and not t_prev
+                sess._hi_line.unshift(line.new(time, high, time, high, xloc = xloc.bar_time, style = sess_style_val, color = value.c, width = sess_width))
+                sess._lo_line.unshift(line.new(time, low, time, low, xloc = xloc.bar_time, style = sess_style_val, color = value.c, width = sess_width))
+                array.unshift(sess._hi_valid, true), array.unshift(sess._lo_valid, true)
+                sess._hi_label.unshift(label.new(time, high, value.hi_txt, xloc = xloc.bar_time, color = transparent, textcolor = value.c, style = label.style_label_down, size = lbl_size))
+                sess._lo_label.unshift(label.new(time, low, value.lo_txt, xloc = xloc.bar_time, color = transparent, textcolor = value.c, style = label.style_label_up, size = lbl_size))
+                
+                if sess._hi_line.size() > lookback_days
+                    sess._hi_line.pop().delete(), sess._lo_line.pop().delete()
+                    sess._hi_valid.pop(), sess._lo_valid.pop()
+                    sess._hi_label.pop().delete(), sess._lo_label.pop().delete()
+            
+            if t and sess._hi_line.size() > 0
+                hi0 = sess._hi_line.get(0), lo0 = sess._lo_line.get(0)
+                hi0.set_x2(time), lo0.set_x2(time)
+                if high > hi0.get_y1()
+                    hi0.set_xy1(time, high), hi0.set_xy2(time, high)
+                    sess._hi_label.get(0).set_xy(time, high)
+                if low < lo0.get_y1()
+                    lo0.set_xy1(time, low), lo0.set_xy2(time, low)
+                    sess._lo_label.get(0).set_xy(time, low)
+            
+            if not t and sess._hi_line.size() > 0
+                for i = 0 to sess._hi_line.size() - 1
+                    if not ext_current or i == 0
+                        if ext_past or sess._hi_valid.get(i)
+                            sess._hi_line.get(i).set_x2(time)
+                        if sess._hi_valid.get(i) and high > sess._hi_line.get(i).get_y1()
+                            sess._hi_valid.set(i, false)
+                            draw_sweep_event(sess._hi_line.get(i).get_x1(), sess._hi_line.get(i).get_y1(), colSwp, swp_line_style)
+                        
+                        if ext_past or sess._lo_valid.get(i)
+                            sess._lo_line.get(i).set_x2(time)
+                        if sess._lo_valid.get(i) and low < sess._lo_line.get(i).get_y1()
+                            sess._lo_valid.set(i, false)
+                            draw_sweep_event(sess._lo_line.get(i).get_x1(), sess._lo_line.get(i).get_y1(), colSwp, swp_line_style)
+
+// --- Opening Lines Logic ---
+if is_within_lookback()
+    for [_, value] in lines
+        bool t = not na(time("", value.h, gmt_tz))
+        bool t_prev = not na(time("", value.h, gmt_tz, bars_back = 1))
+        hz hz = value._hz
+        if t and not t_prev
+            hz.LN.unshift(line.new(bar_index, open, bar_index, open, style = hz_style, width = hz_width, color = value.h_color))
+            hz.LB.unshift(label.new(bar_index, open, value.h_text, style = label.style_label_left, color = transparent, textcolor = value.h_color, size = hz_lbl_size))
+            array.unshift(hz.CO, false)
+            if hz.LN.size() > lookback_days
+                hz.LN.pop().delete(), hz.LB.pop().delete(), hz.CO.pop()
+        
+        if not t and hz.CO.size() > 0
+            if not hz.CO.get(0)
+                hz.LN.get(0).set_x2(bar_index), hz.LB.get(0).set_x(bar_index)
+
+// --- Data High/Low Logic (CON FILTRO DE FECHA) ---
+// Variables de estado DataHL
+var line highLine = na
+var line lowLine = na
+var label highLabel = na
+var label lowLabel = na
+var float targetHigh = na
+var float targetLow = na
+var bool isHighActive = false
+var bool isLowActive = false
+
+// Estilos
+var lineStyle_dhl = line.style_solid
+if lineStyleInput == 'Punteado'
+    lineStyle_dhl := line.style_dotted
+else if lineStyleInput == 'Guiones'
+    lineStyle_dhl := line.style_dashed
+
+var textSize_dhl = size.small
+if textSizeInput == 'Diminuto'
+    textSize_dhl := size.tiny
+else if textSizeInput == 'Normal'
+    textSize_dhl := size.normal
+else if textSizeInput == 'Grande'
+    textSize_dhl := size.large
+
+oneMinHigh = request.security(syminfo.tickerid, '1', high)
+oneMinLow = request.security(syminfo.tickerid, '1', low)
+oneMinTime = request.security(syminfo.tickerid, '1', time)
+
+nyHour = hour(oneMinTime, "America/New_York")
+nyMinute = minute(oneMinTime, "America/New_York")
+isTargetTime = nyHour == 8 and nyMinute == 30
+
+checkNewsDate() =>
+    string currentDate = str.format("{0,number,00}/{1,number,00}/{2,number,0000}", dayofmonth(oneMinTime, "America/New_York"), month(oneMinTime, "America/New_York"), year(oneMinTime, "America/New_York"))
+    bool dateMatch = str.contains(newsDatesInput, currentDate)
+    dateMatch
+
+isDrawingDay = true 
+if useNewsFilter
+    isDrawingDay := checkNewsDate() 
+
+if isTargetTime
+    isHighActive := false
+    isLowActive := false
+    targetHigh := oneMinHigh
+    targetLow := oneMinLow
+
+    if showLevels and isDrawingDay and is_within_lookback()
+        // NOTA: Data H/L usa bar_index para actualizarse tick a tick en el presente
+        highLine := line.new(bar_index, targetHigh, bar_index, targetHigh, color = lineColor, style = lineStyle_dhl, width = 1)
+        lowLine := line.new(bar_index, targetLow, bar_index, targetLow, color = lineColor, style = lineStyle_dhl, width = 1)
+        highLabel := label.new(bar_index, targetHigh, 'Data High', xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_right, color = lineColor, textcolor = textColor, size = textSize_dhl)
+        lowLabel := label.new(bar_index, targetLow, 'Data Low', xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_right, color = lineColor, textcolor = textColor, size = textSize_dhl)
+        isHighActive := true
+        isLowActive := true
+
+// Gestión High
+if isHighActive and not na(highLine)
+    line.set_x2(highLine, bar_index)
+    if high > targetHigh
+        isHighActive := false 
+        if showSwp
+            line.new(line.get_x1(highLine), targetHigh, bar_index, targetHigh, xloc = xloc.bar_index, color = colSwp, style = swp_line_style)
+
+// Gestión Low
+if isLowActive and not na(lowLine)
+    line.set_x2(lowLine, bar_index)
+    if low < targetLow
+        isLowActive := false
+    if showSwp
+        line.new(line.get_x1(lowLine), targetLow, bar_index, targetLow, xloc = xloc.bar_index, color = colSwp, style = swp_line_style)
+
+// --- Liquidity Sweeps (Pivot Only) ---
+var array<LiqLevel> levels = array.new<LiqLevel>()
+var array<SweepObj> sweeps = array.new<SweepObj>()
+int pivotLen = 10 
+var float last_ph_time = 0.0
+var float last_pl_time = 0.0
+
+liqLineStyle = get_line_type_global(styleOpt)
+liqLabelSize = get_size_global(sizeOpt)
+swpLineStyle_piv = swp_line_style 
+swpLabelSize_piv = swp_lbl_size
+
+targetTF = alignMode == "Auto" ? timeframe.period : manualTF
+tfLabelText = alignMode == "Auto" ? getFriendlyTF(timeframe.period) : getFriendlyTF(manualTF)
+
+[mtf_ph, mtf_pl, mtf_ph_time, mtf_pl_time] = request.security(syminfo.tickerid, targetTF, [ta.pivothigh(high, pivotLen, pivotLen), ta.pivotlow(low, pivotLen, pivotLen), time[pivotLen], time[pivotLen]], lookahead = barmerge.lookahead_off)
+
+if not na(mtf_ph) and mtf_ph_time != last_ph_time
+    last_ph_time := mtf_ph_time 
+    pivotTime = int(mtf_ph_time)
+    lineObj  = line.new(pivotTime, mtf_ph, time, mtf_ph, xloc = xloc.bar_time, color = color.new(colBear, 100), style = liqLineStyle)
+    labelObj = label.new(pivotTime, mtf_ph, text = tfLabelText, xloc = xloc.bar_time, style = label.style_label_upper_right, color = color.new(color.white, 100), textcolor = color.new(colBear, 100), size = liqLabelSize)
+    levels.push(LiqLevel.new(mtf_ph, true, pivotTime, lineObj, labelObj, tfLabelText))
+
+if not na(mtf_pl) and mtf_pl_time != last_pl_time
+    last_pl_time := mtf_pl_time 
+    pivotTime = int(mtf_pl_time)
+    lineObj  = line.new(pivotTime, mtf_pl, time, mtf_pl, xloc = xloc.bar_time, color = color.new(colBull, 100), style = liqLineStyle)
+    labelObj = label.new(pivotTime, mtf_pl, text = tfLabelText, xloc = xloc.bar_time, style = label.style_label_lower_right, color = color.new(color.white, 100), textcolor = color.new(colBull, 100), size = liqLabelSize)
+    levels.push(LiqLevel.new(mtf_pl, false, pivotTime, lineObj, labelObj, tfLabelText))
+
+if levels.size() > 0
+    for i = levels.size() - 1 to 0
+        lvl = levels.get(i)
+        line.set_x2(lvl.lvlLine, time)
+        label.set_x(lvl.lvlLabel, time)
+        bool swept = false
+        if lvl.isHigh
+            if high > lvl.price
+                swept := true
+        else
+            if low < lvl.price
+                swept := true
+        
+        if swept
+            line.delete(lvl.lvlLine)
+            label.delete(lvl.lvlLabel)
+            levels.remove(i)
+            
+            if showSwp
+                sLine = line.new(lvl.startTime, lvl.price, time, lvl.price, xloc = xloc.bar_time, color = colSwp, style = swpLineStyle_piv)
+                targetStyle = lvl.isHigh ? label.style_label_lower_right : label.style_label_lower_right
+                sLabel = label.new(time, lvl.price, text = txtSwpInput, xloc = xloc.bar_time, style = targetStyle, color = color.new(color.white, 100), textcolor = colSwp, size = swpLabelSize_piv)
+                sweeps.push(SweepObj.new(sLine, sLabel))
+                if sweeps.size() > 3
+                    oldSwp = sweeps.shift()
+                    line.delete(oldSwp.swpLine)
+                    label.delete(oldSwp.swpLabel)
+
+if barstate.islast
+    if not showLiq
+        if levels.size() > 0
+            for i = 0 to levels.size() - 1
+                lvl = levels.get(i)
+                line.set_color(lvl.lvlLine, color.new(color.white, 100))
+                label.set_textcolor(lvl.lvlLabel, color.new(color.white, 100))
+    else
+        distArray = array.new_float()
+        if levels.size() > 0
+            for i = 0 to levels.size() - 1
+                lvl = levels.get(i)
+                dist = math.abs(close - lvl.price)
+                distArray.push(dist)
+            
+            sortedIndices = array.sort_indices(distArray)
+            for i = 0 to levels.size() - 1
+                lvl = levels.get(i)
+                bool isClosest = false
+                countToCheck = math.min(3, sortedIndices.size())
+                if countToCheck > 0
+                    for k = 0 to countToCheck - 1
+                        if sortedIndices.get(k) == i
+                            isClosest := true
+                
+                if isClosest
+                    targetColor = lvl.isHigh ? colBear : colBull
+                    line.set_color(lvl.lvlLine, targetColor)
+                    label.set_textcolor(lvl.lvlLabel, targetColor)
+                    label.set_style(lvl.lvlLabel, lvl.isHigh ? label.style_label_lower_right : label.style_label_lower_right)
+                    label.set_color(lvl.lvlLabel, color.new(color.white, 100))
+                else
+                    line.set_color(lvl.lvlLine, color.new(color.white, 100))
+                    label.set_textcolor(lvl.lvlLabel, color.new(color.white, 100))
+
+// -------------------------------------------------------------------------
+// D. Lógica SMT (AÑADIDO DEL SCRIPT 2)
+// -------------------------------------------------------------------------
+//Variables SMT
+var phN = 0
+var plN = 0
+var ph_smt1 = 0.
+var pl_smt1 = 0.
+var ph_smt2 = 0.
+var pl_smt2 = 0.
+n_smt = bar_index // Alias local
+
+ticker1 = syminfo.ticker(sym1)
+ticker2 = syminfo.ticker(sym2)
+
+//Detect swing highs/lows and divergences
+if showSmt
+    ph_smt = fixnan(ta.pivothigh(smt_length, smt_length))
+    pl_smt = fixnan(ta.pivotlow(smt_length, smt_length))
+   
+    phN := phN + (ph_smt != ph_smt[1] ? 1 : 0)
+    plN := plN + (pl_smt != pl_smt[1] ? 1 : 0)
+
+    // Comparison symbol pivots
+    [h1, l1, c1] = request.security(sym1, timeframe.period, get_hl())
+    [h2, l2, c2] = request.security(sym2, timeframe.period, get_hl())
+
+    // Detect swing high/low divergences
+    if useSym1
+        sym_ph1 = fixnan(ta.pivothigh(h1, smt_length, smt_length))
+        sym_pl1 = fixnan(ta.pivotlow(l1, smt_length, smt_length))
+
+        ph_smt1 := get_divergence(true, ph_smt, sym_ph1, smtColor)
+        pl_smt1 := get_divergence(false, pl_smt, sym_pl1, smtColor)
+
+    if useSym2
+        sym_ph2 = fixnan(ta.pivothigh(h2, smt_length, smt_length))
+        sym_pl2 = fixnan(ta.pivotlow(l2, smt_length, smt_length))
+
+        ph_smt2 := get_divergence(true, ph_smt, sym_ph2, smtColor)
+        pl_smt2 := get_divergence(false, pl_smt, sym_pl2, smtColor)
+
+    // Labels logic
+    txt = ''
+    if ph_smt != ph_smt[1]
+        if ph_smt1 > ph_smt1[1]
+            txt := txt + ticker1
+            txt
+        if ph_smt2 > ph_smt2[1]
+            txt := txt + (txt != '' ? ' | ' : '')
+            txt := txt + ticker2
+            txt
+
+        if txt != ''
+            label.new(n_smt[smt_length], ph_smt, txt, color = smtColor, style = label.style_label_down, textcolor = textColorInput, size = f_labelSize(labelSizeInput))
+    else
+        if pl_smt1 > pl_smt1[1]
+            txt := txt + ticker1
+            txt
+        if pl_smt2 > pl_smt2[1]
+            txt := txt + (txt != '' ? ' | ' : '')
+            txt := txt + ticker2
+            txt
+
+        if txt != ''
+            label.new(n_smt[smt_length], pl_smt, txt, color = smtColor, style = label.style_label_up, textcolor = textColorInput, size = f_labelSize(labelSizeInput))
+
