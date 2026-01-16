@@ -46,6 +46,30 @@ SWING_GROUP    = 'Swing Structure'
 EQUAL_GROUP    = 'EQH/EQL'
 ZONES_GROUP    = 'Premium & Discount'
 
+// ==============================================================================
+// 1. INPUTS
+// ==============================================================================
+var grp_ifvg = "IFVG Strategy Settings"
+enableIfvg   = input.bool(true, "Enable IFVG Strategy", group = grp_ifvg)
+manualBias   = input.string("Bullish", "Manual Bias", options = ["Bullish", "Bearish", "Neutral"], group = grp_ifvg)
+autoBias     = input.bool(false, "Enable Automatic Bias", tooltip = "Uses SMC Swing Structure to determine bias dynamically.", group = grp_ifvg)
+allowLongIfvg = input.bool(false, "Allow 6-15 Candle IFVGs", tooltip = "If enabled, V-Shape Recovery becomes optional (confluence) and max search lookback extends to 15 bars.", group = grp_ifvg)
+detectMode   = input.string("Single", "Detection Mode", options = ["Single", "Series"], group = grp_ifvg)
+
+// Confluences
+useHtfFvg    = input.bool(true, "Confluence: HTF FVG", group = grp_ifvg)
+useMultiSwp  = input.bool(true, "Confluence: Multi-Sweep", group = grp_ifvg)
+useCisd      = input.bool(true, "Confluence: CISD", group = grp_ifvg)
+useMacroConf = input.bool(true, "Confluence: Macro", group = grp_ifvg)
+useVShapeConf= input.bool(true, "Confluence: V-Shape (If Optional)", group = grp_ifvg)
+
+// Visuals
+showIfvgBox  = input.bool(true, "Show IFVG Boxes", group = grp_ifvg)
+showSignal   = input.bool(true, "Show Signal Levels", group = grp_ifvg)
+colEntry     = input.color(color.blue, "Entry Color", group = grp_ifvg)
+colSL        = input.color(color.red, "SL Color", group = grp_ifvg)
+colTP        = input.color(color.green, "TP Color", group = grp_ifvg)
+
 //---------------------------------------------------------------------------------------------------------------------
 // INPUTS SMC
 //---------------------------------------------------------------------------------------------------------------------
@@ -1259,30 +1283,6 @@ if showSmt
 // -------------------------------------------------------------------------
 // --- E. IFVG STRATEGY EXTENSION (NEW LOGIC) ---
 // -------------------------------------------------------------------------
-
-// ==============================================================================
-// 1. INPUTS
-// ==============================================================================
-var grp_ifvg = "IFVG Strategy Settings"
-enableIfvg   = input.bool(true, "Enable IFVG Strategy", group = grp_ifvg)
-manualBias   = input.string("Bullish", "Manual Bias", options = ["Bullish", "Bearish", "Neutral"], group = grp_ifvg)
-autoBias     = input.bool(false, "Enable Automatic Bias", tooltip = "Uses SMC Swing Structure to determine bias dynamically.", group = grp_ifvg)
-allowLongIfvg = input.bool(false, "Allow 6-15 Candle IFVGs", tooltip = "If enabled, V-Shape Recovery becomes optional (confluence) and max search lookback extends to 15 bars.", group = grp_ifvg)
-detectMode   = input.string("Single", "Detection Mode", options = ["Single", "Series"], group = grp_ifvg)
-
-// Confluences
-useHtfFvg    = input.bool(true, "Confluence: HTF FVG", group = grp_ifvg)
-useMultiSwp  = input.bool(true, "Confluence: Multi-Sweep", group = grp_ifvg)
-useCisd      = input.bool(true, "Confluence: CISD", group = grp_ifvg)
-useMacroConf = input.bool(true, "Confluence: Macro", group = grp_ifvg)
-useVShapeConf= input.bool(true, "Confluence: V-Shape (If Optional)", group = grp_ifvg)
-
-// Visuals
-showIfvgBox  = input.bool(true, "Show IFVG Boxes", group = grp_ifvg)
-showSignal   = input.bool(true, "Show Signal Levels", group = grp_ifvg)
-colEntry     = input.color(color.blue, "Entry Color", group = grp_ifvg)
-colSL        = input.color(color.red, "SL Color", group = grp_ifvg)
-colTP        = input.color(color.green, "TP Color", group = grp_ifvg)
 
 // ==============================================================================
 // 2. STATE & TYPES
